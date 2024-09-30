@@ -1,9 +1,8 @@
-const express = require('express');
-const { MongoClient } = require('mongodb');
-const cors = require('cors');
-const dotenv = require('dotenv');
+require('dotenv').config();
 
-dotenv.config(); // Load environment variables from .env file
+const express = require('express');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -12,49 +11,93 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// MongoDB URI validation
-const connectionString = process.env.MONGODB_URI;
+app.get('/', (req, res) => {
+    res.send('Hello World');
+    });
 
-if (!connectionString || !connectionString.startsWith('mongodb+srv://')) {
-console.error('Invalid MongoDB URI in environment variables.');
-process.exit(1);
+// MongoDB connection URI from environment variable
+const uri = process.env.MONGODB_URI;
+
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+serverApi: {
+version: ServerApiVersion.v1,
+strict: true,
+deprecationErrors: true,
 }
-
-// MongoDB connection setup
-const client = new MongoClient(connectionString, { useNewUrlParser: true, useUnifiedTopology: true });
+});
 
 async function run() {
 try {
+// Connect the client to the MongoDB server
 await client.connect();
-console.log('Connected to MongoDB');
 
-const database = client.db('BookInventory');
-const collection = database.collection('books');
+// Access the "BookInventory" database and "books" collection
+const bookCollection = client.db("BookInventory").collection("books");
 
-// Example route: Get all books
-app.get('/books', async (req, res) => {
-const books = await collection.find({}).toArray();
-res.json(books);
+// Endpoint to upload a new book to the database
+app.post("/upload-book", async (req, res) => {
+const data = req.body;
+const result = await bookCollection.insertOne(data);
+res.send(result);
 });
 
-// Example route: Insert a new book
-app.post('/books', async (req, res) => {
-const newBook = req.body;
-const result = await collection.insertOne(newBook);
-res.json(result);
+// Endpoint to update a book's data
+app.patch("/book/:id", async (req, res) => {
+const id = req.params.id;
+const updateBookData = req.body;
+const filter = { _id: new ObjectId(id) };
+const options = { upsert: true };
+
+const updateDoc = {
+$set: {
+...updateBookData
+}
+};
+
+const result = await bookCollection.updateOne(filter, updateDoc, options);
+res.send(result);
 });
 
-// More routes and MongoDB operations can be added here...
+// Endpoint to delete a book
+app.delete("/book/:id", async (req, res) => {
+const id = req.params.id;
+const filter = { _id: new ObjectId(id) };
+const result = await bookCollection.deleteOne(filter);
+res.send(result);
+});
 
-} catch (error) {
-console.error('Error connecting to MongoDB:', error);
-process.exit(1);
+// Endpoint to fetch all books or books by category
+app.get("/all-books", async (req, res) => {
+let query = {};
+if (req.query?.category) {
+query = { category: req.query.category };
+}
+const result = await bookCollection.find(query).toArray();
+res.send(result);
+});
+
+// Endpoint to fetch a single book by its ID
+app.get("/book/:id", async (req, res) => {
+const id = req.params.id;
+const filter = { _id: new ObjectId(id) };
+const result = await bookCollection.findOne(filter);
+res.send(result);
+});
+
+// Ping MongoDB deployment to confirm successful connection
+await client.db("admin").command({ ping: 1 });
+console.log("Pinged your deployment. You successfully connected to MongoDB!");
+} finally {
+// Ensure that the client will close when you finish or error
+// await client.close();
 }
 }
 
-run().catch(console.error);
+// Run the async function to start the application
+run().catch(console.dir);
 
-// Start the server
+// Start the express server
 app.listen(port, () => {
-console.log(`Server is running on http://localhost:${port}`);
+console.log(`Express app listening on port ${port}`);
 });
